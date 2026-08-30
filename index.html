@@ -1,13 +1,840 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>pamcam</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>VIEWSTAGE CAPTURE — 30° Guided Shoot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --asphalt:#101214;
+    --panel:#16191d;
+    --panel-2:#1c2027;
+    --line:#2a2f38;
+    --chrome:#eef0f3;
+    --concrete:#8a8f98;
+    --signal:#ff5a1f;
+    --deep-blue:#1b2a4a;
+    --ok:#3ddc84;
+    --err:#ff4d4f;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{ height:100%; background:var(--asphalt); color:var(--chrome); font-family:'Inter',sans-serif; overflow:hidden; }
+  .display{ font-family:'Space Grotesk',sans-serif; }
+  .mono{ font-family:'JetBrains Mono',monospace; letter-spacing:0.02em; }
+  ::selection{ background:var(--signal); color:#fff; }
+
+  #app{ position:relative; width:100vw; height:100vh; }
+  .screen{ position:absolute; inset:0; display:none; flex-direction:column; }
+  .screen.active{ display:flex; }
+
+  /* ---------- shared top bar ---------- */
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:20px 22px; z-index:10;
+  }
+  .brand{ display:flex; align-items:center; gap:10px; }
+  .brand-mark{ width:10px; height:10px; background:var(--signal); box-shadow:0 0 12px var(--signal); }
+  .brand-name{ font-size:14px; font-weight:700; letter-spacing:0.12em; text-transform:uppercase; }
+  .brand-sub{ font-size:10.5px; color:var(--concrete); letter-spacing:0.06em; margin-left:4px; }
+  .phase-tag{
+    font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--concrete);
+    border:1px solid var(--line); padding:5px 10px; display:flex; align-items:center; gap:8px;
+  }
+  .phase-tag .dim{ opacity:0.45; }
+
+  /* ================= SETUP SCREEN ================= */
+  #screen-setup{ align-items:center; justify-content:center; padding:24px; }
+  .setup-card{ max-width:440px; width:100%; text-align:left; }
+  .setup-eyebrow{
+    font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:var(--signal);
+    margin-bottom:14px; display:flex; align-items:center; gap:8px;
+  }
+  .setup-eyebrow::before{ content:''; width:18px; height:1px; background:var(--signal); }
+  .setup-title{ font-size:clamp(28px,6vw,38px); font-weight:600; line-height:1.05; letter-spacing:-0.01em; margin-bottom:14px; }
+  .setup-title em{ font-style:normal; color:var(--concrete); }
+  .setup-desc{ font-size:13.5px; color:var(--concrete); line-height:1.6; margin-bottom:26px; }
+
+  .arc-diagram{ width:100%; max-width:300px; margin:0 auto 26px; display:block; }
+
+  .step-list{ display:flex; flex-direction:column; gap:10px; margin-bottom:28px; }
+  .step-item{ display:flex; gap:12px; align-items:flex-start; font-size:12.5px; color:var(--concrete); line-height:1.5; }
+  .step-num{
+    flex-shrink:0; width:20px; height:20px; border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--chrome);
+  }
+
+  .settings-row{
+    display:flex; align-items:center; justify-content:space-between;
+    border:1px solid var(--line); background:var(--panel);
+    padding:12px 14px; margin-bottom:18px;
+  }
+  .settings-row .lbl{ font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--concrete); }
+  .stepper{ display:flex; align-items:center; gap:12px; }
+  .stepper button{
+    width:26px; height:26px; background:var(--panel-2); border:1px solid var(--line); color:var(--chrome);
+    font-family:'JetBrains Mono',monospace; cursor:pointer; font-size:14px;
+  }
+  .stepper button:hover{ border-color:var(--signal); color:var(--signal); }
+  .stepper .n{ font-family:'JetBrains Mono',monospace; font-size:13px; min-width:16px; text-align:center; }
+  .stepper button.arc-opt{ width:auto; padding:0 12px; font-family:'JetBrains Mono',monospace; font-size:12px; }
+  .stepper button.arc-opt.active{ background:var(--signal); color:#101214; border-color:var(--signal); font-weight:600; }
+
+  .btn-primary{
+    width:100%; padding:15px; background:var(--signal); color:#101214; border:none;
+    font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:14px; letter-spacing:0.02em;
+    cursor:pointer; text-transform:uppercase;
+  }
+  .btn-primary:hover{ background:#ff7040; }
+  .btn-primary:disabled{ background:var(--panel-2); color:var(--concrete); cursor:not-allowed; }
+
+  .btn-secondary{
+    width:100%; padding:13px; background:transparent; color:var(--chrome); border:1px solid var(--line);
+    font-family:'Inter',sans-serif; font-weight:500; font-size:13px;
+    cursor:pointer; margin-top:10px;
+  }
+  .btn-secondary:hover{ border-color:var(--concrete); }
+
+  .error-msg{
+    display:none; margin-top:14px; padding:10px 12px; border:1px solid var(--err);
+    color:var(--err); font-size:12px; line-height:1.5; background:rgba(255,77,79,0.08);
+  }
+  .error-msg.show{ display:block; }
+  .https-note{ margin-top:16px; font-size:11px; color:var(--concrete); line-height:1.6; }
+
+  /* ================= CAPTURE SCREEN ================= */
+  #screen-capture{ background:#000; }
+  .video-wrap{ position:relative; flex:1; overflow:hidden; }
+  #video{ width:100%; height:100%; object-fit:cover; display:block; }
+  #flash{ position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none; }
+
+  .capture-hud-top{
+    position:absolute; top:0; left:0; right:0; padding:18px 20px;
+    display:flex; justify-content:space-between; align-items:flex-start; z-index:5;
+  }
+  .step-counter{ font-family:'JetBrains Mono',monospace; font-size:12px; color:#fff; letter-spacing:0.08em; }
+  .step-counter .of{ color:rgba(255,255,255,0.5); }
+  .close-btn{
+    width:30px; height:30px; border:1px solid rgba(255,255,255,0.35); background:rgba(0,0,0,0.3);
+    color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:14px;
+  }
+
+  .instruction-banner{
+    position:absolute; top:64px; left:50%; transform:translateX(-50%);
+    background:rgba(16,18,20,0.72); border:1px solid rgba(255,255,255,0.12);
+    padding:9px 18px; border-radius:100px; font-size:12.5px; color:#fff;
+    display:flex; align-items:center; gap:8px; z-index:5; white-space:nowrap;
+  }
+  .instruction-banner .arrow{ color:var(--signal); font-size:14px; }
+
+  /* arc guide */
+  .arc-guide{
+    position:absolute; bottom:150px; left:50%; transform:translateX(-50%);
+    z-index:5; width:220px; height:70px;
+  }
+  .arc-guide svg{ width:100%; height:100%; overflow:visible; }
+
+  /* alignment slider — "bubble level" style guide, doc-scanner-esque */
+  .align-wrap{
+    position:absolute; bottom:190px; left:50%; transform:translateX(-50%);
+    z-index:6; width:260px; text-align:center;
+  }
+  .align-label{
+    font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.1em;
+    color:rgba(255,255,255,0.6); margin-bottom:8px; text-transform:uppercase;
+  }
+  .align-track{
+    position:relative; width:100%; height:34px;
+    background:rgba(16,18,20,0.55); border:1px solid rgba(255,255,255,0.15);
+    border-radius:100px; overflow:visible;
+  }
+  .align-zone{
+    position:absolute; top:3px; bottom:3px; left:50%; width:56px; transform:translateX(-50%);
+    background:rgba(255,90,31,0.18); border:1px solid rgba(255,90,31,0.4);
+    border-radius:100px; transition:background 0.15s ease, border-color 0.15s ease;
+  }
+  .align-zone.hot{ background:rgba(61,220,132,0.22); border-color:#3ddc84; }
+  .align-dot{
+    position:absolute; top:50%; left:50%; width:26px; height:26px; border-radius:50%;
+    background:#ff5a1f; transform:translate(-50%,-50%); transition:background 0.15s ease;
+    box-shadow:0 0 12px rgba(255,90,31,0.6);
+  }
+  .align-dot.hot{ background:#3ddc84; box-shadow:0 0 14px rgba(61,220,132,0.7); }
+  .align-center-tick{
+    position:absolute; top:-5px; left:50%; width:2px; height:8px; background:rgba(255,255,255,0.4);
+    transform:translateX(-50%);
+  }
+  .mode-toggle{
+    position:absolute; top:18px; left:50%; transform:translateX(-50%);
+    z-index:6; display:flex; background:rgba(16,18,20,0.6); border:1px solid rgba(255,255,255,0.18);
+    border-radius:100px; padding:3px; gap:2px;
+  }
+  .mode-toggle button{
+    border:none; background:transparent; color:rgba(255,255,255,0.55);
+    font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:0.06em;
+    padding:6px 12px; border-radius:100px; cursor:pointer; text-transform:uppercase;
+  }
+  .mode-toggle button.active{ background:var(--signal); color:#101214; font-weight:600; }
+  .align-unavailable-note{
+    position:absolute; top:56px; left:50%; transform:translateX(-50%);
+    font-size:10.5px; color:rgba(255,255,255,0.5); z-index:6; text-align:center; width:220px;
+    display:none;
+  }
+
+  .angle-readout{
+    position:absolute; bottom:250px; left:50%; transform:translateX(-50%);
+    font-family:'JetBrains Mono',monospace; font-size:11px; color:rgba(255,255,255,0.6);
+    letter-spacing:0.08em; z-index:5; text-align:center;
+  }
+  .angle-readout .v{ color:var(--signal); font-size:13px; }
+
+  .capture-controls{
+    position:absolute; bottom:0; left:0; right:0; padding:24px 24px 30px;
+    display:flex; align-items:center; justify-content:center; z-index:5;
+    background:linear-gradient(to top, rgba(0,0,0,0.55), transparent);
+  }
+  .shutter{
+    width:72px; height:72px; border-radius:50%; background:transparent;
+    border:3px solid #fff; display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+  }
+  .shutter-inner{ width:58px; height:58px; border-radius:50%; background:#fff; transition:transform 0.1s ease; }
+  .shutter:active .shutter-inner{ transform:scale(0.85); }
+
+  .filmstrip{
+    position:absolute; bottom:120px; left:0; right:0; display:flex; gap:8px;
+    padding:0 20px; z-index:5; overflow-x:auto;
+  }
+  .film-thumb{
+    width:38px; height:52px; border:1px solid rgba(255,255,255,0.3);
+    object-fit:cover; flex-shrink:0;
+  }
+
+  /* ================= PREVIEW / SPIN SCREEN ================= */
+  #screen-preview{ background:var(--asphalt); }
+  .preview-stage{
+    flex:1; position:relative; display:flex; align-items:center; justify-content:center;
+    overflow:hidden; touch-action:none; cursor:grab; user-select:none;
+    background:radial-gradient(ellipse at center, #1a1d22 0%, #101214 75%);
+  }
+  .preview-stage:active{ cursor:grabbing; }
+  .preview-stage img{
+    max-width:82%; max-height:82%; object-fit:contain; pointer-events:none;
+    filter:drop-shadow(0 20px 40px rgba(0,0,0,0.5));
+  }
+
+  .preview-hud-corner{ position:absolute; width:22px; height:22px; border-color:var(--line); pointer-events:none; }
+  .preview-hud-corner.tl{ top:78px; left:20px; border-top:1px solid; border-left:1px solid; }
+  .preview-hud-corner.tr{ top:78px; right:20px; border-top:1px solid; border-right:1px solid; }
+  .preview-hud-corner.bl{ bottom:120px; left:20px; border-bottom:1px solid; border-left:1px solid; }
+  .preview-hud-corner.br{ bottom:120px; right:20px; border-bottom:1px solid; border-right:1px solid; }
+
+  .preview-readout{
+    position:absolute; top:88px; left:52px; font-size:11px; color:var(--concrete);
+    letter-spacing:0.06em; line-height:1.7; z-index:6;
+  }
+  .preview-readout .val{ color:var(--chrome); font-size:13px; }
+
+  .drag-hint{
+    position:absolute; bottom:150px; left:50%; transform:translateX(-50%);
+    font-size:11px; color:var(--concrete); letter-spacing:0.08em; text-transform:uppercase;
+    display:flex; align-items:center; gap:8px; pointer-events:none;
+  }
+
+  .preview-bottom{
+    padding:18px 20px 26px; display:flex; gap:10px; z-index:6;
+  }
+
+  .arc-track{
+    position:absolute; bottom:100px; left:50%; transform:translateX(-50%);
+    width:220px; height:3px; background:var(--line); z-index:6;
+  }
+  .arc-track-fill{ height:100%; background:var(--signal); width:0%; }
+  .arc-track-dot{
+    position:absolute; top:50%; width:8px; height:8px; border-radius:50%;
+    background:var(--asphalt); border:2px solid var(--signal); transform:translate(-50%,-50%);
+  }
+
+  @media (max-width:420px){
+    .setup-card{ max-width:100%; }
+    .arc-diagram{ max-width:220px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ============ SETUP SCREEN ============ -->
+  <div class="screen active" id="screen-setup">
+    <div class="topbar">
+      <div class="brand">
+        <div class="brand-mark"></div>
+        <div class="brand-name display">Viewstage</div>
+        <div class="brand-sub mono">// capture</div>
+      </div>
+      <div class="phase-tag mono">30° ARC <span class="dim">· 360° next</span></div>
+    </div>
+
+    <div style="flex:1; display:flex; align-items:center; justify-content:center; padding:0 22px 22px;">
+      <div class="setup-card">
+        <div class="setup-eyebrow mono">Phase 1 — Guided shoot</div>
+        <div class="setup-title display">Walk a few steps.<br><em>We'll guide the angle.</em></div>
+        <div class="setup-desc">Have your subject stand still in one spot. Hold your phone up and move in a small arc around them — we'll tell you exactly when and where to tap the shutter.</div>
+
+        <svg class="arc-diagram" viewBox="0 0 300 160" fill="none">
+          <circle cx="150" cy="130" r="10" fill="#2a2f38"/>
+          <text x="150" y="150" text-anchor="middle" fill="#8a8f98" font-size="9" font-family="JetBrains Mono, monospace">SUBJECT</text>
+          <path d="M 60 60 A 100 100 0 0 1 240 60" stroke="#2a2f38" stroke-width="1.5" fill="none" stroke-dasharray="4 4"/>
+          <circle cx="60" cy="60" r="5" fill="#ff5a1f"/>
+          <circle cx="105" cy="32" r="5" fill="#ff5a1f"/>
+          <circle cx="150" cy="24" r="5" fill="#ff5a1f"/>
+          <circle cx="195" cy="32" r="5" fill="#ff5a1f"/>
+          <circle cx="240" cy="60" r="5" fill="#ff5a1f"/>
+          <text x="150" y="14" text-anchor="middle" fill="#8a8f98" font-size="9" font-family="JetBrains Mono, monospace">30° ARC</text>
+        </svg>
+
+        <div class="step-list">
+          <div class="step-item"><div class="step-num mono">1</div><div>Subject stands still, camera starts at their left shoulder line.</div></div>
+          <div class="step-item"><div class="step-num mono">2</div><div>Tap the shutter, take a small step sideways, tap again.</div></div>
+          <div class="step-item"><div class="step-num mono">3</div><div>Repeat until you reach their right shoulder line — done.</div></div>
+        </div>
+
+        <div class="settings-row">
+          <div class="lbl mono">Arc width</div>
+          <div class="stepper" id="arcSelector">
+            <button type="button" class="arc-opt active" data-arc="30">30°</button>
+            <button type="button" class="arc-opt" data-arc="45">45°</button>
+          </div>
+        </div>
+
+        <div class="settings-row">
+          <div class="lbl mono">Shots in this arc</div>
+          <div class="stepper">
+            <button id="stepDown" type="button">−</button>
+            <div class="n mono" id="stepCount">4</div>
+            <button id="stepUp" type="button">+</button>
+          </div>
+        </div>
+
+        <button class="btn-primary" id="startBtn">Start capture</button>
+        <div class="https-note mono" id="contextNote"></div>
+        <div class="error-msg" id="setupError"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ CAPTURE SCREEN ============ -->
+  <div class="screen" id="screen-capture">
+    <div class="video-wrap">
+      <video id="video" autoplay playsinline muted></video>
+      <div id="flash"></div>
+
+      <div class="capture-hud-top">
+        <div class="step-counter mono">SHOT <span id="curStep">1</span><span class="of">/<span id="totalSteps">4</span></span></div>
+        <div class="close-btn" id="closeCaptureBtn">✕</div>
+      </div>
+
+      <div class="mode-toggle" id="modeToggle">
+        <button type="button" class="active" id="autoModeBtn">Auto</button>
+        <button type="button" id="manualModeBtn">Manual</button>
+      </div>
+      <div class="align-unavailable-note" id="alignUnavailableNote">Auto-align not available on this device — use manual capture below.</div>
+
+      <div class="angle-readout" id="angleReadout">TARGET <span class="v" id="targetAngle">0°</span></div>
+
+      <div class="align-wrap" id="alignWrap">
+        <div class="align-label" id="alignLabel">Line up · hold steady</div>
+        <div class="align-track">
+          <div class="align-center-tick"></div>
+          <div class="align-zone" id="alignZone"></div>
+          <div class="align-dot" id="alignDot"></div>
+        </div>
+      </div>
+
+      <div class="arc-guide">
+        <svg viewBox="0 0 220 70" fill="none" id="arcGuideSvg"></svg>
+      </div>
+
+      <div class="instruction-banner" id="instructionBanner">
+        <span class="arrow">→</span><span id="instructionText">Frame your subject, then tap the shutter</span>
+      </div>
+
+      <div class="filmstrip" id="filmstrip"></div>
+
+      <div class="capture-controls">
+        <div class="shutter" id="shutterBtn"><div class="shutter-inner"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ PREVIEW / SPIN SCREEN ============ -->
+  <div class="screen" id="screen-preview">
+    <div class="topbar">
+      <div class="brand">
+        <div class="brand-mark"></div>
+        <div class="brand-name display">Viewstage</div>
+        <div class="brand-sub mono">// arc preview</div>
+      </div>
+      <div class="phase-tag mono">30° ARC <span class="dim">· 360° next</span></div>
+    </div>
+
+    <div class="preview-readout mono">
+      DRAG&nbsp;&nbsp;<span class="val" id="dragState">READY</span><br>
+      FRAME&nbsp;&nbsp;<span class="val" id="frameVal">1 / 4</span>
+    </div>
+
+    <div class="preview-hud-corner tl"></div>
+    <div class="preview-hud-corner tr"></div>
+    <div class="preview-hud-corner bl"></div>
+    <div class="preview-hud-corner br"></div>
+
+    <div class="preview-stage" id="previewStage">
+      <img id="previewImg" src="" alt="Captured frame">
+    </div>
+
+    <div class="drag-hint mono" id="dragHint">← drag to view the arc →</div>
+
+    <div class="arc-track">
+      <div class="arc-track-fill" id="arcTrackFill"></div>
+      <div class="arc-track-dot" id="arcTrackDot" style="left:0%"></div>
+    </div>
+
+    <div class="preview-bottom">
+      <button class="btn-secondary" id="retakeBtn" style="margin-top:0;">Retake all</button>
+      <button class="btn-primary" id="doneBtn">Looks good</button>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<script src="firebase-config.js"></script>
+
+<script>
+(function(){
+
+  // ---------- state ----------
+  let shotCount = 4;
+  let arcDegrees = 30;
+  let capturedFrames = []; // dataURLs
+  let stream = null;
+  let currentStep = 0;
+
+  // Keep each step meaningfully larger than the alignment threshold (see
+  // ALIGN_THRESHOLD_DEG below), or auto-capture reads "aligned" without the
+  // person actually needing to move — that was a real bug at 30°/8 shots
+  // before this was coupled to arc size.
+  const MIN_STEP_DEG = 10;
+  function maxShotsForArc(deg){
+    return Math.max(2, Math.floor(deg / MIN_STEP_DEG) + 1);
+  }
+
+  const setupScreen = document.getElementById('screen-setup');
+  const captureScreen = document.getElementById('screen-capture');
+  const previewScreen = document.getElementById('screen-preview');
+
+  function showScreen(el){
+    [setupScreen, captureScreen, previewScreen].forEach(s=>s.classList.remove('active'));
+    el.classList.add('active');
+  }
+
+  // ---------- context / secure-context note ----------
+  const contextNote = document.getElementById('contextNote');
+  const isSecure = window.isSecureContext;
+  contextNote.textContent = isSecure
+    ? 'Camera access ready — this connection is secure.'
+    : 'Note: camera access needs HTTPS or localhost. Host this file securely to enable the shutter.';
+
+  // ---------- arc selector ----------
+  document.querySelectorAll('.arc-opt').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('.arc-opt').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      arcDegrees = parseInt(btn.dataset.arc, 10);
+      const cap = maxShotsForArc(arcDegrees);
+      if(shotCount > cap){
+        shotCount = cap;
+        stepCountEl.textContent = shotCount;
+      }
+    });
+  });
+
+  // ---------- shot count stepper ----------
+  const stepCountEl = document.getElementById('stepCount');
+  document.getElementById('stepDown').addEventListener('click', ()=>{
+    shotCount = Math.max(2, shotCount - 1);
+    stepCountEl.textContent = shotCount;
+  });
+  document.getElementById('stepUp').addEventListener('click', ()=>{
+    shotCount = Math.min(maxShotsForArc(arcDegrees), shotCount + 1);
+    stepCountEl.textContent = shotCount;
+  });
+
+  // ---------- start capture ----------
+  const setupError = document.getElementById('setupError');
+  const video = document.getElementById('video');
+  const startBtn = document.getElementById('startBtn');
+
+  startBtn.addEventListener('click', async ()=>{
+    setupError.classList.remove('show');
+    startBtn.disabled = true;
+    startBtn.textContent = 'Requesting camera…';
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width:{ideal:1280}, height:{ideal:1280} },
+        audio:false
+      });
+      video.srcObject = stream;
+      capturedFrames = [];
+      currentStep = 0;
+      document.getElementById('totalSteps').textContent = shotCount;
+      document.getElementById('filmstrip').innerHTML = '';
+      buildArcGuide();
+      updateCaptureHUD();
+      await requestOrientationAccess();
+      showScreen(captureScreen);
+      measureAlignTrack();
+    }catch(err){
+      setupError.textContent = 'Camera access failed: ' + (err.message || err.name) + '. Check your browser permissions and that this page is served over HTTPS or localhost.';
+      setupError.classList.add('show');
+    }finally{
+      startBtn.disabled = false;
+      startBtn.textContent = 'Start capture';
+    }
+  });
+
+  // ---------- arc guide (SVG dots across the 30° arc) ----------
+  function buildArcGuide(){
+    const svg = document.getElementById('arcGuideSvg');
+    svg.innerHTML = '';
+    const w = 220, h = 70, cx = 110, cy = 130, r = 100;
+    const startA = Math.PI/2 + (arcDegrees/2)*(Math.PI/180);
+    const endA = Math.PI/2 - (arcDegrees/2)*(Math.PI/180);
+    let path = '';
+    for(let i=0;i<shotCount;i++){
+      const t = i/(shotCount-1);
+      const a = startA + (endA-startA)*t;
+      const x = cx + r*Math.cos(a);
+      const y = cy - r*Math.sin(a) - 60;
+      const filled = i <= currentStep;
+      const isCurrent = i === currentStep;
+      svg.innerHTML += `<circle cx="${x}" cy="${y}" r="${isCurrent?7:5}" fill="${filled?'#ff5a1f':'#2a2f38'}" stroke="${isCurrent?'#fff':'none'}" stroke-width="1.5"/>`;
+    }
+  }
+
+  function updateCaptureHUD(){
+    document.getElementById('curStep').textContent = currentStep + 1;
+    const moveAmt = currentTargetAngle();
+    document.getElementById('targetAngle').textContent = currentStep === 0 ? 'HOLD' : ('~' + Math.round(moveAmt) + '°');
+
+    const instrEl = document.getElementById('instructionText');
+    if(currentStep === 0){
+      instrEl.textContent = autoModeEnabled ? 'Frame your subject and hold steady — auto-captures itself' : 'Frame your subject, then tap the shutter';
+    } else if(currentStep === shotCount-1){
+      instrEl.textContent = autoModeEnabled ? 'Final step — line up the slider below' : 'Final step — hold steady and tap the shutter';
+    } else {
+      instrEl.textContent = autoModeEnabled ? 'Take a small step sideways, line up the slider' : 'Take a small step sideways, then tap the shutter';
+    }
+    buildArcGuide();
+  }
+
+  // ---------- capture a frame ----------
+  const flash = document.getElementById('flash');
+  const shutterBtn = document.getElementById('shutterBtn');
+  const filmstrip = document.getElementById('filmstrip');
+
+  function doCapture(){
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 720;
+    canvas.height = video.videoHeight || 720;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+    capturedFrames.push(dataUrl);
+
+    // flash feedback
+    flash.style.transition = 'none';
+    flash.style.opacity = '0.85';
+    requestAnimationFrame(()=>{
+      flash.style.transition = 'opacity 0.25s ease';
+      flash.style.opacity = '0';
+    });
+
+    const thumb = document.createElement('img');
+    thumb.className = 'film-thumb';
+    thumb.src = dataUrl;
+    filmstrip.appendChild(thumb);
+
+    currentStep++;
+    resetAlignment();
+    if(currentStep >= shotCount){
+      stopStream();
+      loadPreview();
+      showScreen(previewScreen);
+    } else {
+      updateCaptureHUD();
+    }
+  }
+
+  shutterBtn.addEventListener('click', doCapture);
+
+  // ---------- auto-align guidance (device orientation, relative-baseline) ----------
+  let orientationSupported = false;
+  let autoModeEnabled = true;
+  let baselineAlpha = null;
+  let alignedSince = null;
+  let autoArmed = false;
+  const ALIGN_THRESHOLD_DEG = 5;
+  const STABLE_MS = 550;
+
+  function normalizeSigned(deg){
+    let d = ((deg + 180) % 360 + 360) % 360 - 180;
+    return d;
+  }
+
+  function currentTargetAngle(){
+    // Baseline re-zeroes after every capture (see resetAlignment), so the target
+    // is always "how far to rotate from wherever you are right now" — a fixed
+    // step size — not an absolute arc position. Step 0 has no prior step to move
+    // from, so its target is 0 (just hold the frame you're already composing).
+    if(currentStep === 0) return 0;
+    return shotCount>1 ? arcDegrees/(shotCount-1) : 0;
+  }
+
+  function resetAlignment(){
+    alignedSince = null;
+    autoArmed = false;
+    baselineAlpha = null; // re-baseline against wherever the phone is now pointing for the next step
+  }
+
+  async function requestOrientationAccess(){
+    const alignWrap = document.getElementById('alignWrap');
+    const noteEl = document.getElementById('alignUnavailableNote');
+
+    if(typeof DeviceOrientationEvent === 'undefined'){
+      orientationSupported = false;
+    } else if(typeof DeviceOrientationEvent.requestPermission === 'function'){
+      // iOS 13+ requires an explicit user-gesture-triggered permission request
+      try{
+        const res = await DeviceOrientationEvent.requestPermission();
+        orientationSupported = (res === 'granted');
+      }catch(err){
+        orientationSupported = false;
+      }
+    } else {
+      // Android / other browsers — no explicit permission gate
+      orientationSupported = true;
+    }
+
+    if(orientationSupported){
+      window.addEventListener('deviceorientation', handleOrientation);
+      alignWrap.style.display = 'block';
+      noteEl.style.display = 'none';
+    } else {
+      alignWrap.style.display = 'none';
+      noteEl.style.display = 'block';
+      setAutoMode(false);
+      document.getElementById('modeToggle').style.display = 'none';
+    }
+  }
+
+  // Cache the track's pixel width once (not per-event) so the dot can move
+  // via transform instead of `left`. `left` forces a layout reflow on every
+  // orientation event (fires ~30-60x/sec) while the camera feed is already
+  // running — transform is compositor-only and doesn't reflow anything.
+  let alignTrackWidthPx = 0;
+  function measureAlignTrack(){
+    const track = document.querySelector('.align-track');
+    if(track) alignTrackWidthPx = track.getBoundingClientRect().width;
+  }
+  window.addEventListener('resize', measureAlignTrack);
+
+  function handleOrientation(event){
+    if(event.alpha === null || event.alpha === undefined) return;
+    if(baselineAlpha === null){ baselineAlpha = event.alpha; }
+
+    const relative = normalizeSigned(event.alpha - baselineAlpha);
+    const diff = normalizeSigned(relative - currentTargetAngle());
+    const clamped = Math.max(-45, Math.min(45, diff));
+
+    const dot = document.getElementById('alignDot');
+    const zone = document.getElementById('alignZone');
+    const label = document.getElementById('alignLabel');
+
+    if(!alignTrackWidthPx) measureAlignTrack();
+    const maxOffsetPx = (alignTrackWidthPx / 2) - 15; // keep dot inside the track's rounded ends
+    const offsetPx = (clamped / 45) * Math.max(0, maxOffsetPx);
+    dot.style.transform = `translate(-50%, -50%) translateX(${offsetPx}px)`;
+
+    const isAligned = Math.abs(diff) <= ALIGN_THRESHOLD_DEG;
+    dot.classList.toggle('hot', isAligned);
+    zone.classList.toggle('hot', isAligned);
+
+    if(!autoModeEnabled){
+      label.textContent = 'Manual mode — tap shutter when ready';
+      alignedSince = null;
+      return;
+    }
+
+    if(isAligned){
+      if(alignedSince === null) alignedSince = performance.now();
+      const held = performance.now() - alignedSince;
+      if(held < STABLE_MS){
+        label.textContent = 'Hold steady…';
+      } else if(!autoArmed){
+        autoArmed = true;
+        label.textContent = 'Captured!';
+        doCapture();
+      }
+    } else {
+      alignedSince = null;
+      label.textContent = diff > 0 ? 'Rotate slowly, one way…' : 'Rotate slowly, the other way…';
+    }
+  }
+
+  function setAutoMode(on){
+    autoModeEnabled = on;
+    document.getElementById('autoModeBtn').classList.toggle('active', on);
+    document.getElementById('manualModeBtn').classList.toggle('active', !on);
+    resetAlignment();
+  }
+  document.getElementById('autoModeBtn').addEventListener('click', ()=> setAutoMode(true));
+  document.getElementById('manualModeBtn').addEventListener('click', ()=> setAutoMode(false));
+
+  document.getElementById('closeCaptureBtn').addEventListener('click', ()=>{
+    stopStream();
+    showScreen(setupScreen);
+  });
+
+  function stopStream(){
+    if(stream){
+      stream.getTracks().forEach(t=>t.stop());
+      stream = null;
+    }
+  }
+
+  // ---------- preview / spin ----------
+  const previewImg = document.getElementById('previewImg');
+  const previewStage = document.getElementById('previewStage');
+  const frameVal = document.getElementById('frameVal');
+  const dragState = document.getElementById('dragState');
+  const arcTrackFill = document.getElementById('arcTrackFill');
+  const arcTrackDot = document.getElementById('arcTrackDot');
+  let curFrame = 0;
+
+  function loadPreview(){
+    curFrame = 0;
+    renderFrame();
+  }
+
+  function renderFrame(){
+    if(capturedFrames.length === 0) return;
+    previewImg.src = capturedFrames[curFrame];
+    frameVal.textContent = (curFrame+1) + ' / ' + capturedFrames.length;
+    const pct = capturedFrames.length>1 ? (curFrame/(capturedFrames.length-1))*100 : 0;
+    arcTrackFill.style.width = pct + '%';
+    arcTrackDot.style.left = pct + '%';
+  }
+
+  let dragging = false, dragStartX = 0, dragStartFrame = 0, dragAccum = 0;
+  const FRAME_STEP_PX = 44;
+
+  previewStage.addEventListener('pointerdown', e=>{
+    dragging = true; dragStartX = e.clientX; dragStartFrame = curFrame; dragAccum = 0;
+    dragState.textContent = 'ACTIVE';
+    previewStage.setPointerCapture(e.pointerId);
+    document.getElementById('dragHint').style.opacity = '0';
+  });
+  previewStage.addEventListener('pointermove', e=>{
+    if(!dragging) return;
+    dragAccum = e.clientX - dragStartX;
+    const steps = Math.round(-dragAccum / FRAME_STEP_PX);
+    let next = dragStartFrame + steps;
+    next = Math.max(0, Math.min(capturedFrames.length-1, next));
+    if(next !== curFrame){ curFrame = next; renderFrame(); }
+  });
+  function endDrag(){
+    dragging = false;
+    dragState.textContent = 'READY';
+  }
+  previewStage.addEventListener('pointerup', endDrag);
+  previewStage.addEventListener('pointercancel', endDrag);
+
+  document.getElementById('retakeBtn').addEventListener('click', ()=>{
+    capturedFrames = [];
+    currentStep = 0;
+    document.getElementById('filmstrip').innerHTML = '';
+    showScreen(setupScreen);
+  });
+
+  async function dataUrlToBlob(dataUrl){
+    const res = await fetch(dataUrl);
+    return await res.blob();
+  }
+
+  document.getElementById('doneBtn').addEventListener('click', async ()=>{
+    const btn = document.getElementById('doneBtn');
+    if(!window.viewstageFirebase){
+      btn.textContent = 'Firebase not configured';
+      setTimeout(()=>{ btn.textContent = 'Looks good'; }, 1800);
+      return;
+    }
+    const { db, storage, authReady } = window.viewstageFirebase;
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    try{
+      btn.textContent = 'Signing in…';
+      const user = await authReady;
+
+      btn.textContent = 'Creating session…';
+      const sessionRef = db.collection('capture_sessions').doc();
+      await sessionRef.set({
+        ownerId: user.uid,
+        arcDegrees: arcDegrees,
+        shotCount: capturedFrames.length,
+        status: 'uploading',
+        uploadedFrameCount: 0,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+
+      for(let i=0;i<capturedFrames.length;i++){
+        btn.textContent = `Uploading ${i+1}/${capturedFrames.length}…`;
+        const blob = await dataUrlToBlob(capturedFrames[i]);
+        const path = `sessions/${user.uid}/${sessionRef.id}/frame_${i}.jpg`;
+        const fileRef = storage.ref().child(path);
+        await fileRef.put(blob, { contentType: 'image/jpeg' });
+        const url = await fileRef.getDownloadURL();
+
+        await sessionRef.collection('frames').doc(`frame_${i}`).set({
+          index: i,
+          angle: Math.round(-arcDegrees/2 + arcDegrees*(capturedFrames.length>1 ? i/(capturedFrames.length-1) : 0)),
+          storagePath: path,
+          url: url,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+
+      await sessionRef.update({ status: 'ready', readyAt: firebase.firestore.FieldValue.serverTimestamp() });
+
+      btn.textContent = 'Saved ✓';
+    }catch(err){
+      console.error('Upload failed:', err);
+      btn.textContent = 'Upload failed — retry';
+    }finally{
+      btn.disabled = false;
+      setTimeout(()=>{ btn.textContent = originalText; }, 2200);
+    }
+  });
+
+  // initial arc guide draw for preview svg sizing consistency
+  buildArcGuide();
+
+})();
+</script>
+</body>
 </html>
